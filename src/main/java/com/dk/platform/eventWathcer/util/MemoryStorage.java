@@ -64,13 +64,13 @@ public class MemoryStorage {
      * Threshold for Checking Delay Case.
      * SR means Threshold between Receive Event and Send Event.
      */
-    private Double ThresholdSR;
+    private int ThresholdSR;
 
     /**
      * Threshold for Checking Delay Case.
      * AS means Threshold between Send Event and Acknowledge Event.
      */
-    private Double ThresholdAS;
+    private int ThresholdAS;
 
     /**
      * DELAY 여유공간
@@ -91,7 +91,7 @@ public class MemoryStorage {
     /**
      *
      */
-    private ConcurrentHashMap<String, EvictingQueue<String>> WindowManageMap;
+    private ConcurrentHashMap<String, EvictingQueue<Integer>> WindowManageMap;
 
 
 
@@ -104,11 +104,11 @@ public class MemoryStorage {
     private MemoryStorage(){}
 
     private void initWindowManageMap(){
-        // TODO Make it Conf file.
+        // TODO Make it Conf file. 하드코딩 된거 conf로 돌려야힘
         WindowManageMap = new ConcurrentHashMap<>();
 
-        EvictingQueue<String> windowsForSR = EvictingQueue.create(50);
-        EvictingQueue<String> windowsForAS = EvictingQueue.create(50);
+        EvictingQueue<Integer> windowsForSR = EvictingQueue.create(50);
+        EvictingQueue<Integer> windowsForAS = EvictingQueue.create(50);
 
         WindowManageMap.put("SR", windowsForSR);
         WindowManageMap.put("AS", windowsForAS);
@@ -119,6 +119,7 @@ public class MemoryStorage {
     /*
      ***********************************  Logic **********************************************
      *****************************************************************************************/
+
 
 
 
@@ -159,16 +160,16 @@ public class MemoryStorage {
         return SurveillanceTargets;
     }
 
-    public ConcurrentHashMap<String, EvictingQueue<String>> getWindowManageMap() {
+    public ConcurrentHashMap<String, EvictingQueue<Integer>> getWindowManageMap() {
         if(WindowManageMap == null) this.initWindowManageMap();
         return WindowManageMap;
     }
 
-    public Double getThresholdSR() {
+    public int getThresholdSR() {
         return ThresholdSR;
     }
 
-    public Double getThresholdAS() {
+    public int getThresholdAS() {
         return ThresholdAS;
     }
 
@@ -204,15 +205,15 @@ public class MemoryStorage {
         SurveillanceTargets = surveillanceTargets;
     }
 
-    public void setWindowManageMap(ConcurrentHashMap<String, EvictingQueue<String>> windowManageMap) {
+    public void setWindowManageMap(ConcurrentHashMap<String, EvictingQueue<Integer>> windowManageMap) {
         WindowManageMap = windowManageMap;
     }
 
-    public void setThresholdSR(Double thresholdSR) {
+    public void setThresholdSR(int thresholdSR) {
         ThresholdSR = thresholdSR;
     }
 
-    public void setThresholdAS(Double thresholdAS) {
+    public void setThresholdAS(int thresholdAS) {
         ThresholdAS = thresholdAS;
     }
 

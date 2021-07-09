@@ -216,7 +216,7 @@ public class MonitoringReceiverProcess implements Runnable, EventPlatformConsume
     }
 
 
-    /*****************************************************************************************
+    /*
      ***********************************  Process Logic **************************************
      *****************************************************************************************/
 
@@ -387,8 +387,10 @@ public class MonitoringReceiverProcess implements Runnable, EventPlatformConsume
             return;
         }
 
-        // 1. Generate New EventVO. nad put in map.
-        eventVoMap.put(messageID, EventVO.builder().timeStamp(timeStamp).dest(destName).hostName(hostName).build());
+        // 1. Generate New EventVO. put in map.
+        eventVoMap.put(messageID, EventVO.builder().messageID(messageID).timeStamp(timeStamp).destname(destName).
+                                                    hostName(hostName).payload(payload).thresholdSR(memoryStorage.getThresholdSR()).
+                                                    build());
 
     }
 
@@ -406,20 +408,51 @@ public class MonitoringReceiverProcess implements Runnable, EventPlatformConsume
         EventVO eventVO = eventVoMap.get(messageID);
         if(eventVO == null) {
             // TODO EventVo is Not in Map on Send Case.
-            log.error("Receive Type Event's Message ID is already in Map.");
+            log.error("Send Type Event's Message ID is already in Map.");
             return;
         }
-        eventVO.updateS_data(timeStamp);
+
+        // Update time-stamp in EventVO.
+        eventVO.updateSendEvent(timeStamp, memoryStorage.getThresholdAS());
 
     }
 
 
     /**
+     * 1. Update Time-Stamp
+     * 2. Reporting
+     * 3. Remove EventVO.
      *
      * @param timeStamp                 :               TimeStamp when Event Type received.
      * @param messageID                 :               Event Unique ID.
      */
     private void ackEventHandle(long timeStamp, String messageID){
+
+        log.debug("");
+        EventVO eventVO = eventVoMap.get(messageID);
+        if(eventVO == null){
+            // TODO EventVo is Not in Map on Send Case.
+            log.error("Ack Type Event's Message ID is already in Map.");
+            return;
+        }
+
+        // update time-stamp in EventVO.
+        eventVO.updateAckEvent(timeStamp);
+
+        // Report Window Queue Case.  Report Difference to Window Queues.
+        if(eventVO.isReportable()) {
+            memoryStorage.getWindowManageMap().get("SR").add(eventVO.getDifferenceSR());    // TODO Hard-Coding
+            memoryStorage.getWindowManageMap().get("AS").add(eventVO.getDifferenceAS());
+            log.info("ID : {}. is Not-Delay Case. Report to Windows Queue for calculating Threshold and " +
+                    "DifferenceSR : {}, DifferenceAS : {}.  it's  going to be removed",
+                    messageID, eventVO.getDifferenceSR(), eventVO.getDifferenceAS());
+        }else{
+            // TODO Delay Case. Send to Tracker to analyze reason of Delay.
+        }
+
+        // Remove
+        eventVoMap.remove(messageID);
+        log.debug("ID : {}. is Removed from Map. Current Map Status : {}", messageID, eventVoMap.keys().toString());
 
     }
 

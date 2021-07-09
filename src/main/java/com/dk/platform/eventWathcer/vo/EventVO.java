@@ -1,241 +1,279 @@
 package com.dk.platform.eventWathcer.vo;
 
-import com.dk.platform.eventWathcer.process.conf.LogType;
+import com.dk.platform.eventWathcer.util.MemoryStorage;
+import lombok.Builder;
+import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.concurrent.atomic.AtomicInteger;
+
+@Slf4j
+@NoArgsConstructor
 public class EventVO {
-	
+
 	private static String CLASS_NAME = EventVO.class.getSimpleName();
 	private static Logger logger = LoggerFactory.getLogger(CLASS_NAME);
-	
-	
+
+
 	/**
 	 *  =====> Schema <=====
-	 *  EXTN					:			String			:			EXTEN, Secondary Key
-	 *  CMD					:			String			:			Command 
-	 *  Destination				:			String			:
-	 *  QueueType				:			String			:			"SQ" : Sequential Queue,  "DQ" : Distribute Queue
+	 *  MessageID				:			String			:			Event Key. Event ID,  can find VO in Map with ID.
+	 *  Destination				:			String			:			EMS Destination name.
 	 *  HostName				:			String			:			Client Server Name
-	 *  RecvTime				:			Double			:			Receive Event Type Time Stamp
-	 *  SendTime				:			Double			:			Send Event Type Time Stamp
-	 *  DelayForSR			:			boolean			:			Flag on When Delay when SR Case.
-	 *  AckTime				:			Double			:			Acknowledge Event Type Time Stamp
-	 *  DelayForAS			:			boolean			:			Flag on When Delay when AS Case.
-	 *  SminusR				:			Double			:			SendTime		-		RecvTime
-	 *  AminusS				:			Double			:			AckTime			-		SendTime
-	 *  CompleteFlag			:			boolean			:			Marking as Seem to be Danger
-	 *  SSR					:			Double			: 			Stands for Standard SminusR 
-	 *  SAS					:			Double			:			Stands for Standard	AminusS
-	 *  WatchCount			:			Intger			:			for Watcher,  Watch Count.
+	 *  RecvTime				:			long			:			Receive Event Type Time Stamp
+	 *  SendTime				:			long			:			Send Event Type Time Stamp
+	 *  AckTime					:			long			:			Acknowledge Event Type Time Stamp
+	 *  payload					:			byte[]			:			Message Contents
+	 * (7)
+	 *
+	 * differenceSR				:			int				:			Difference between Receive Event Time and Send Event Time. (Send - Receive)
+	 * differenceAS				:			int				:			Difference between Send Event Time and Ack Event Time. ( Ack - Send)
+	 * (2)
+	 *
+	 * thresholdSR				:			int				:			Threshold for delay case calculating by windows queue.
+	 * thresholdAS				:			int				:			Same Above
+	 * (2)
+	 *
+	 *  DelayForSR				:			boolean			:			Flag on When Delay when SR Case.
+	 *  DelayForAS				:			boolean			:			Flag on When Delay when AS Case.
+	 * (2)
+	 *
+	 *  WatchedCount			:			int				:			for Watcher,  Watch Count.
+	 * (1)
 	 */
-	private String extn;
-	
-	private String cmd;
-	
-	private String destiNation;
-	
-	private String queueType;
-	
-	private String hostName;
-	
-	private Double recv_time = null;
-	
-	private Double send_time = null;
-	
-	private Double ack_time = null;
-	
-	// R- S TIme
-	private Double SminusR = null;
-	private Double SSR = null;
-	
-	private Double AminusS = null;
-	private Double SAS = null;
-	
-	private int WatchCount = 0;
-	
-	private boolean CompleteFlag = false;
-	
-	
-	
+
+	/*
+	 * Default Variables
+	 */
+	private String messageID; private String destName; private String hostName;
+	private Long receiveTime; private Long sendTime; private Long ackTime;
+	private byte[] paylod;
+
+	private int differenceSR; private int differenceAS;
+	private int thresholdSR; private int thresholdAS;
+
+	private boolean DelayForSR; private boolean DelayForAS;
+
+	private AtomicInteger WatchedCount = new AtomicInteger();
+
+
+	private final Timer timer = new Timer("DelayTimer", true); private TimerTask timerTask;
+	private int delayMargin = MemoryStorage.getInstance().getDELAY_PRECENT();
+
+
 	/**
-	 * Initialize Constructor MapVO
-	 * Insert R data Type
-	 * @param logType
-	 * @param extn
-	 * @param dest
+	 *
+	 * @param messageID
+	 * @param destname
 	 * @param hostName
 	 * @param timeStamp
-	 * @throws Exception
+	 * @param payload
+	 * @param thresholdSR
 	 */
-	public EventVO(String logType, String extn, String cmd, String queueType, String dest, String hostName, Long timeStamp) throws Exception {
-		
-		String METHOD_NAME = Thread.currentThread().getStackTrace()[1].getMethodName();
-		logger.info("[{}][{}] ", CLASS_NAME, METHOD_NAME);
-		
-		
-		
-		// Initialize Value Object
-		// Case : Insert Receive Log Type
-		if(logType.equals(LogType.RECV.getType())){
-		    
-		    if(insertR_data(extn, cmd, queueType, dest, hostName, timeStamp))
-			
-			logger.info("[{}][{}]  Initialize MapVO., By Inserting Receive Log Type. ", CLASS_NAME, METHOD_NAME);
-		    
-		}else {
-		    logger.error("[{}][{}]  Error While Inserting Receive Log Type.  Print Paramerters.  LogType : {}., EXTN : {}., Command : {}., Destination : {}., QueueType : {}.,  HostName : {}., TimeStamp : {}.",
-			    CLASS_NAME, METHOD_NAME, logType, extn, dest, cmd, queueType, hostName, timeStamp);
-		    
-		    throw new Exception(" Fail to Initialize MapVO.");
-		    
-		}
+	@Builder
+	public EventVO(String messageID, String destname, String hostName, long timeStamp, byte[] payload, int thresholdSR) {
+
+		log.debug(" Print ALl Parameter");
+
+		this.messageID = messageID; this.destName = destname; this.hostName = hostName;
+		this.receiveTime = timeStamp; this.paylod = payload;
+
+		log.info("Initialize MapVO., By Inserting Receive Log Type. ");
+
+		// SR Timer Start.
+		this.thresholdSR = thresholdSR;
+		timerTask = new TimerTask() {
+			@Override
+			public void run() {
+				if(sendTime == null){
+					DelayForSR = true;
+					MemoryStorage.getInstance().getSurveillanceTargets().add(messageID);
+					log.warn(" SR Delay Case Flag on. Send to Surveillance Queue.Current EventVO : {}", this.toString());
+
+				}
+				log.info("Not SR Delay Case. Message ID  : {}", messageID);
+			}
+		};
+		long delay = this.getDelayTime(thresholdSR);
+		timer.schedule(timerTask, delay);
+		log.info("Set-Up RS Delay Timer. after {}ms", delay);
+
 	}
-	
-	
+
 	/**
-	 * Insert Receive Data., Initialize MapVO
-	 * @param extn
-	 * @param dest
-	 * @param hostName
-	 * @param timestamp
+	 *
+	 * @param threshold
 	 * @return
 	 */
-	private boolean insertR_data (String extn, String cmd, String queueType, String dest, String hostName, double timestamp) {
-	    
-	    	String METHOD_NAME = Thread.currentThread().getStackTrace()[1].getMethodName();
-		logger.info("[{}][{}] ", CLASS_NAME, METHOD_NAME);
-		
-		try {
-		    if(this.destiNation == null) this.destiNation = dest;
-		    
-		    this.queueType = queueType;
-		    
-		    this.cmd = cmd;
-		    
-		    if(this.hostName == null) this.hostName = hostName;
-		    
-		    if(this.recv_time == null) this.recv_time = timestamp;
-		    
-		    if(this.extn == null) this.extn = extn;
-		    
-		}catch (Exception e) {
-		    
-		    logger.error("[{}][{}] Error.,  {}\n{}", CLASS_NAME, METHOD_NAME, e.getMessage(), e.getStackTrace());
-		    return false;
-		}
-		
-		return true;
-	    
+	private long getDelayTime(int threshold){
+		return Math.round(threshold * (1 + delayMargin * 0.01));
 	}
-	
-	
-	
+
+
 	/**
 	 * Update VO When SEND Data Inserted.
 	 * @param timeStamp
 	 * @return
 	 */
-	public double updateS_data(double timeStamp) {
-	    
-	    this.send_time = timeStamp;
-	    this.SminusR = timeStamp - this.recv_time;
-	    
-	    return this.SminusR;
+	public void updateSendEvent(long timeStamp, int thresholdAS) {
+
+		this.sendTime = timeStamp;
+		this.differenceSR = (int) (sendTime - receiveTime);
+
+		// AS Timmer Start.
+		timerTask.cancel();
+		log.info("Cancel TimerTask for Create AS Timer. SR is Not Delay Case.");
+
+		this.thresholdAS = thresholdAS;
+		timerTask = new TimerTask() {
+			@Override
+			public void run() {
+				if(ackTime == null){
+					DelayForAS = true;
+					MemoryStorage.getInstance().getSurveillanceTargets().add(messageID);
+					log.warn(" AS Delay Case Flag on. Send to Surveillance Queue.Current EventVO : {}", this.toString());
+
+				}
+				log.info("Not AS Delay Case. Message ID  : {}", messageID);
+			}
+		};
+		long delay = this.getDelayTime(thresholdAS);
+		timer.schedule(timerTask, delay);
+		log.info("Set-Up AS Delay Timer. after {}ms", delay);
+
 	}
 	
 	
 	/**
 	 * Update VO when ACK Data Inserted.
+	 * 1. Update Ack Time Stamp
+	 * 2. Cancel Timer and Timer Task.
+	 *
 	 * @param timStamp
 	 * @return
 	 */
-	public double updateA_data(double timStamp) {
+	public void updateAckEvent(long timStamp) {
 	    
-	    this.ack_time = timStamp;
-	    this.AminusS = timStamp - this.send_time;
-	    this.CompleteFlag = true;
-	    return this.AminusS;
+	    this.ackTime = timStamp;
+	    this.differenceAS = (int) (ackTime - sendTime);
+
+	    // Remove and Purge Timer.
+		timerTask.cancel();
+		timer.cancel();
+		log.info("Cancel TimerTask and Timer. It is Not AS Delay Case.");
+
+
 	}
-	
-	
-	public String getEXTN() {
-	    return this.extn;
+
+	/**
+	 * 지연처리 판단 기준을 위한 Window Queue로 시간별 차이 값 보고 여부 확인 메소드
+	 * 지연인 경우(AS or SR)에는 보고하지 않고 Event-Tracker로 보내서 처리해야한다.
+	 *
+	 * Report difference to Windows Queue for calculating Threshold.
+	 * if either AS and SR are Not Delay -> Report data
+	 * if not report to tracker.
+	 *
+	 * @return
+	 */
+	public boolean isReportable(){
+		return !this.isDelayForSR() && !this.isDelayForAS();
 	}
-	
-	public String getCMD() {
-	    return this.cmd;
+
+	/**
+	 *
+	 * @return			:		Watched Count.
+	 */
+	public int increaseWatchCount(){
+		return this.WatchedCount.incrementAndGet();
 	}
-	
-	public String getDestination() {
-	    return this.destiNation;
+
+
+	/*
+	 * Getter
+	 */
+
+	public int getDifferenceSR() {
+		return differenceSR;
 	}
-	
-	public String getQueueType() {
-	    return this.queueType;
+
+	public int getDifferenceAS() {
+		return differenceAS;
 	}
-	
-	public String getHostName() {
-	    return this.hostName;
+
+	public String getMessageID() {
+		return messageID;
 	}
-	
-	public boolean getCompleteFlag() {
-	    return this.CompleteFlag;
+
+	public Long getReceiveTime() {
+		return receiveTime;
 	}
-	
-	public Double getSR() {
-	    return this.SminusR;
+
+	public Long getSendTime() {
+		return sendTime;
 	}
-	
-	public Double getAS() {
-	    return this.AminusS;
+
+	public int getThresholdSR() {
+		return thresholdSR;
 	}
-	
-	public Double getSSR() {
-	    return this.SSR;
+
+	public int getThresholdAS() {
+		return thresholdAS;
 	}
-	
-	public Double getSAS() {
-	    return this.SAS;
+
+	public boolean isDelayForSR() {
+		return DelayForSR;
 	}
-	
-	public int getWatchCount() {
-	    return this.WatchCount;
+
+	public boolean isDelayForAS() {
+		return DelayForAS;
 	}
-	public void setSSR(double ssr) {
-	    this.SSR = ssr;
+
+	/*
+	 * Setter
+	 */
+
+	public void setThresholdSR(int thresholdSR) {
+		this.thresholdSR = thresholdSR;
 	}
-	public void setSAS(double sas) {
-	    this.SAS = sas;
+
+	public void setThresholdAS(int thresholdAS) {
+		this.thresholdAS = thresholdAS;
 	}
-	
-	
+
 	@Override
 	public String toString() {
-	    
-	    return "EXTN : " + this.extn + 
-		    " Destination : " + this.destiNation + 
-		    " Queue Type : " + this.queueType + 
-		    " Host Name : " + this.hostName + 
-		    " Recv Time : " + this.recv_time + 
-		    " Send Time : " + this.send_time + 
-		    " Ack Time : "  + this.ack_time  + 
-		    " SR Time : " + this.SminusR + 
-		    " AS Time : " + this.AminusS;
+		return "EventVO{" +
+				"messageID='" + messageID + '\'' +
+				", destName='" + destName + '\'' +
+				", hostName='" + hostName + '\'' +
+				", receiveTime=" + receiveTime +
+				", sendTime=" + sendTime +
+				", ackTime=" + ackTime +
+				", differenceSR=" + differenceSR +
+				", differenceAS=" + differenceAS +
+				", thresholdSR=" + thresholdSR +
+				", thresholdAS=" + thresholdAS +
+				", DelayForSR=" + DelayForSR +
+				", DelayForAS=" + DelayForAS +
+				", WatchedCount=" + WatchedCount +
+				'}';
 	}
-	
-	
-	/**
-	 */
-	public void Backup_method() {
-	    /**
-		 * Update Map VO.,  (Send Type,  Acknowledge Type)
-		 * @param logType
-		 * @param extn
-		 * @param timeStamp
-		 * @return
-		 * @throws Exception
-		 */
+
+//	/**
+//	 */
+//	public void Backup_method() {
+//	    /**
+//		 * Update Map VO.,  (Send Type,  Acknowledge Type)
+//		 * @param logType
+//		 * @param extn
+//		 * @param timeStamp
+//		 * @return
+//		 * @throws Exception
+//		 */
 //		public boolean updateVO(String logType, String extn, long timeStamp) throws Exception {
 	//
 //		    String METHOD_NAME = Thread.currentThread().getStackTrace()[1].getMethodName();
@@ -302,6 +340,14 @@ public class EventVO {
 //		    
 //		}
 
+//	}
+
+	public static void main(String[] args) {
+
+		int num = 50;
+		int percent = 20;
+		long delay = Math.round(50 * (20 * 0.01));
+		System.out.println(delay);
 	}
 	
 }
