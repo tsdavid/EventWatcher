@@ -1,6 +1,5 @@
 package com.dk.platform.eventWathcer.util.influx;
 
-import com.dk.emslog.db.mapCentral.MapCentral;
 import org.influxdb.InfluxDB;
 import org.influxdb.InfluxDB.LogLevel;
 import org.influxdb.InfluxDBFactory;
@@ -19,7 +18,7 @@ import org.slf4j.LoggerFactory;
  */
 public class InfluxDbConn {
     
-    private static String CLASS_NAME = MapCentral.class.getSimpleName();
+    private static String CLASS_NAME = InfluxDbConn.class.getSimpleName();
     private static Logger logger = LoggerFactory.getLogger(CLASS_NAME);
     
     /**
